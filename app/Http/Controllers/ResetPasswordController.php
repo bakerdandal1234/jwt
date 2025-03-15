@@ -29,18 +29,13 @@ class ResetPasswordController extends Controller
             return response()->json(['message' => 'User not found'], 404);
         }
 
-        $status = Password::sendResetLink($request->only('email'));
+        $status = password::sendResetLink($request->only('email'));
 
-        switch ($status) {
-            case Password::RESET_LINK_SENT:
-                return response()->json(['message' => 'Password reset link has been sent to your email', 'status' => 'success']);
-            case Password::RESET_THROTTLED:
-                return response()->json(['message' => 'Please wait before requesting another reset link', 'status' => 'error'], 429);
-            case Password::INVALID_USER:
-                return response()->json(['message' => 'No user found with this email address', 'status' => 'error'], 404);
-            default:
-                return response()->json(['message' => 'Unable to send password reset link', 'status' => 'error'], 500);
-        }
+
+
+        return $status === Password::RESET_LINK_SENT
+            ? response()->json(['message' => 'Reset password link sent on your email id.'])
+            : response()->json(['message' => 'Unable to send reset password link'], 500);
     }
 
 
@@ -63,18 +58,9 @@ class ResetPasswordController extends Controller
             ])->save();
         });
 
-        switch ($status) {
-            case Password::PASSWORD_RESET:
-                return response()->json(['message' => 'Password has been reset successfully', 'status' => 'success']);
-            case Password::INVALID_TOKEN:
-                return response()->json(['message' => 'Invalid reset token', 'status' => 'error'], 400);
-            case Password::INVALID_USER:
-                return response()->json(['message' => 'No user found with this email address', 'status' => 'error'], 404);
-            case Password::RESET_THROTTLED:
-                return response()->json(['message' => 'Please wait before retrying', 'status' => 'error'], 429);
-            default:
-                return response()->json(['message' => 'Unable to reset password', 'status' => 'error'], 500);
-        }
+        return $status === Password::PASSWORD_RESET
+            ? response()->json(['message' => 'Password reset successfully'])
+            : response()->json(['message' => 'Unable to reset password'], 500);
     }
 
    

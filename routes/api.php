@@ -2,7 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AuthController; // Ensure this class exists in the specified namespace
 use App\Http\Controllers\ResetPasswordController;
 use App\Http\Controllers\VerifyEmailController;
 use App\Http\Controllers\SocialAuthController;

@@ -1,7 +1,6 @@
 <?php
 
 namespace App\Http\Controllers;
-
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
@@ -32,7 +31,7 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
+            'name' => 'required|string|max:255|min:3',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
         ]);
@@ -48,7 +47,7 @@ class AuthController extends Controller
         ]);
 
         // إنشاء JWT للمستخدم الجديد
-        $token = Auth::guard('api')->login($user);
+        $token = auth('api')->login($user);
         $refreshToken = $this->createRefreshToken($user);
 
         return $this->respondWithTokens($token, $refreshToken, 'تم تسجيل المستخدم بنجاح', $user);
@@ -72,11 +71,18 @@ class AuthController extends Controller
 
         $credentials = $request->only('email', 'password');
 
-        if (!$token = Auth::guard('api')->attempt($credentials)) {
-            return response()->json(['message' => 'بيانات الاعتماد غير صحيحة'], 401);
+        // Attempt to authenticate the user
+        if (!$token = auth('api')->attempt($credentials)) {
+            return response()->json(['error' => 'incorrect email or password'], 401);
         }
 
-        $user = Auth::guard('api')->user();
+        // Get the authenticated user
+        $user = auth('api')->user();
+
+         // Check if the user's email is verified
+    if (!$user->email_verified_at) {
+        return response()->json(['error' => 'Please verify your email before logging in.'], 403);
+    }
         
         // إلغاء جميع رموز التحديث السابقة للمستخدم
         RefreshToken::where('user_id', $user->id)->update(['revoked' => true]);
@@ -85,6 +91,7 @@ class AuthController extends Controller
         $refreshToken = $this->createRefreshToken($user);
 
         return $this->respondWithTokens($token, $refreshToken, 'تم تسجيل الدخول بنجاح', $user);
+
     }
 
     /**
@@ -94,7 +101,7 @@ class AuthController extends Controller
      */
     public function me()
     {
-        return $this->response()->json(Auth::guard('api')->user());
+        return $this->response()->json(auth('api')->user());
     }
 
     /**
@@ -104,14 +111,14 @@ class AuthController extends Controller
      */
     public function logout()
     {
-        $user = Auth::guard('api')->user();
+        $user = auth('api')->user();
         
         // إلغاء جميع رموز التحديث للمستخدم
         if ($user) {
             RefreshToken::where('user_id', $user->id)->update(['revoked' => true]);
         }
         
-        Auth::guard('api')->logout();
+        auth('api')->logout();
 
         return response()->json(['message' => 'تم تسجيل الخروج بنجاح']);
     }
