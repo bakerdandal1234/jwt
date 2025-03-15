@@ -87,7 +87,7 @@ class AuthController extends Controller
         $refreshToken = $this->createRefreshToken($user);
 
         // Generate a new JWT token
-        $token = Auth::guard('api')->refresh();
+        $token = Auth::guard('api')->login($user);
 
         return $this->respondWithTokens($token, $refreshToken, 'Login successful', $user);
     }
@@ -129,30 +129,28 @@ class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'refresh_token' => 'required|string',
+            'user_id' => 'required|integer',
         ]);
-
+    
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
-
-        // Find all valid non-revoked tokens for comparison
-        $validTokens = RefreshToken::where('revoked', false)
+    
+        $validTokens = RefreshToken::where('user_id', $request->user_id)
+            ->where('revoked', false)
             ->where('expires_at', '>', now())
             ->get();
         
         $refreshToken = null;
-        $userId = null;
         
-        // Check each token to find a match
+        // التحقق من التوكنات المحددة فقط
         foreach ($validTokens as $token) {
-            // Compare the plain text token with the hashed one in the database
             if (Hash::check($request->refresh_token, $token->token)) {
                 $refreshToken = $token;
-                $userId = $token->user_id;
                 break;
             }
         }
-
+    
         Log::info('Refresh Token Request:', [
             'token_provided' => substr($request->refresh_token, 0, 10) . '...',
             'token_found' => $refreshToken ? 'yes' : 'no',
@@ -160,17 +158,18 @@ class AuthController extends Controller
             'now' => now(),
             'is_revoked' => $refreshToken ? $refreshToken->revoked : 'N/A'
         ]);
-
+    
         if (!$refreshToken) {
             return response()->json(['error' => 'Invalid or expired refresh token'], 401);
         }
-
-        $user = User::find($userId);
+    
+        // استخدام معرف المستخدم من الطلب مباشرة أو من توكن التحديث
+        $user = User::find($request->user_id);
         
         if (!$user) {
             return response()->json(['error' => 'User not found'], 404);
         }
-
+    
         // Revoke the current refresh token
         $refreshToken->update(['revoked' => true]);
         
@@ -180,10 +179,9 @@ class AuthController extends Controller
         
         // Create a new refresh token
         $newRefreshToken = $this->createRefreshToken($user);
-
+    
         return $this->respondWithTokens($token, $newRefreshToken, 'Token refreshed successfully');
     }
-
     /**
      * Create a refresh token for the user.
      *
