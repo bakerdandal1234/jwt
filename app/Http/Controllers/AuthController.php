@@ -6,6 +6,7 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 use App\Models\User;
 use App\Models\RefreshToken;
 use Illuminate\Support\Str;
@@ -14,7 +15,7 @@ use Carbon\Carbon;
 class AuthController extends Controller
 {
     /**
-     * إنشاء مثيل جديد من وحدة التحكم.
+     * Create a new controller instance.
      *
      * @return void
      */
@@ -24,7 +25,7 @@ class AuthController extends Controller
     }
 
     /**
-     * تسجيل مستخدم جديد.
+     * Register a new user.
      *
      * @return \Illuminate\Http\JsonResponse
      */
@@ -46,15 +47,15 @@ class AuthController extends Controller
             'password' => Hash::make($request->password),
         ]);
 
-        // إنشاء JWT للمستخدم الجديد
-        $token = auth('api')->login($user);
+        // Create JWT for the new user
+        $token = Auth::guard('api')->login($user);
         $refreshToken = $this->createRefreshToken($user);
 
-        return $this->respondWithTokens($token, $refreshToken, 'تم تسجيل المستخدم بنجاح', $user);
+        return $this->respondWithTokens($token, $refreshToken, 'User registered successfully', $user);
     }
 
     /**
-     * تسجيل الدخول وإنشاء رموز JWT.
+     * Login and create JWT tokens.
      *
      * @return \Illuminate\Http\JsonResponse
      */
@@ -72,59 +73,55 @@ class AuthController extends Controller
         $credentials = $request->only('email', 'password');
 
         // Attempt to authenticate the user
-        if (!$token = auth('api')->attempt($credentials)) {
-            return response()->json(['error' => 'incorrect email or password'], 401);
+        if (!Auth::guard('api')->attempt($credentials)) {
+            return response()->json(['error' => 'Incorrect email or password'], 401);
         }
 
         // Get the authenticated user
-        $user = auth('api')->user();
-
-         // Check if the user's email is verified
-    if (!$user->email_verified_at) {
-        return response()->json(['error' => 'Please verify your email before logging in.'], 403);
-    }
+        $user = Auth::guard('api')->user();
         
-        // إلغاء جميع رموز التحديث السابقة للمستخدم
+        // Revoke all previous refresh tokens for the user
         RefreshToken::where('user_id', $user->id)->update(['revoked' => true]);
         
-        // إنشاء رمز تحديث جديد
+        // Create a new refresh token
         $refreshToken = $this->createRefreshToken($user);
 
-        return $this->respondWithTokens($token, $refreshToken, 'تم تسجيل الدخول بنجاح', $user);
+        // Generate a new JWT token
+        $token = Auth::guard('api')->refresh();
 
+        return $this->respondWithTokens($token, $refreshToken, 'Login successful', $user);
     }
 
     /**
-     * الحصول على المستخدم المصادق عليه حاليًا.
+     * Get the currently authenticated user.
      *
      * @return \Illuminate\Http\JsonResponse
      */
     public function me()
     {
-        return $this->response()->json(auth('api')->user());
+        return response()->json(Auth::guard('api')->user());
     }
 
     /**
-     * تسجيل الخروج (إبطال الرموز الحالية).
+     * Logout (invalidate current tokens).
      *
      * @return \Illuminate\Http\JsonResponse
      */
     public function logout()
     {
-        $user = auth('api')->user();
+        $user = Auth::guard('api')->user();
         
-        // إلغاء جميع رموز التحديث للمستخدم
+        // Revoke all refresh tokens for the user
         if ($user) {
             RefreshToken::where('user_id', $user->id)->update(['revoked' => true]);
         }
-        
-        auth('api')->logout();
+        Auth::guard('api')->logout();
 
-        return response()->json(['message' => 'تم تسجيل الخروج بنجاح']);
+        return response()->json(['message' => 'Successfully logged out']);
     }
 
     /**
-     * تحديث رمز JWT باستخدام رمز التحديث.
+     * Refresh JWT token using a refresh token.
      *
      * @return \Illuminate\Http\JsonResponse
      */
@@ -138,50 +135,58 @@ class AuthController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // البحث عن رمز التحديث في قاعدة البيانات
-        $refreshTokenModel = RefreshToken::where('token', $request->refresh_token)
+        // Find the refresh token in the database
+        $refreshToken = RefreshToken::where('token', $request->refresh_token)
             ->where('revoked', false)
             ->where('expires_at', '>', now())
             ->first();
 
-        if (!$refreshTokenModel) {
-            return response()->json(['error' => 'رمز التحديث غير صالح أو منتهي الصلاحية'], 401);
+        Log::info('Refresh Token Request:', [
+            'token' => $request->refresh_token,
+            'found' => $refreshToken ? 'yes' : 'no',
+            'expires_at' => $refreshToken ? $refreshToken->expires_at : 'N/A',
+            'now' => now(),
+            'is_revoked' => $refreshToken ? $refreshToken->revoked : 'N/A'
+        ]);
+
+        if (!$refreshToken) {
+            return response()->json(['error' => 'Invalid or expired refresh token'], 401);
         }
 
-        $user = User::find($refreshTokenModel->user_id);
+        $user = User::find($refreshToken->user_id);
         
         if (!$user) {
-            return response()->json(['error' => 'المستخدم غير موجود'], 404);
+            return response()->json(['error' => 'User not found'], 404);
         }
 
-        // إلغاء رمز التحديث الحالي
-        $refreshTokenModel->update(['revoked' => true]);
+        // Revoke the current refresh token
+        $refreshToken->update(['revoked' => true]);
         
-        // إنشاء رمز JWT جديد للمستخدم
+        // Create a new JWT token for the user
         Auth::guard('api')->setUser($user);
-        $token = Auth::guard('api')->refresh();
+        $token = Auth::guard('api')->login($user);
         
-        // إنشاء رمز تحديث جديد
+        // Create a new refresh token
         $newRefreshToken = $this->createRefreshToken($user);
 
-        return $this->respondWithTokens($token, $newRefreshToken, 'تم تحديث الرمز بنجاح');
+        return $this->respondWithTokens($token, $newRefreshToken, 'Token refreshed successfully');
     }
 
     /**
-     * إنشاء رمز تحديث للمستخدم.
+     * Create a refresh token for the user.
      *
      * @param  \App\Models\User $user
      * @return string
      */
     protected function createRefreshToken(User $user)
     {
-        // إنشاء رمز فريد
+        // Create a unique token
         $token = Str::random(64);
         
-        // تحديد تاريخ انتهاء الصلاحية (30 يوم)
+        // Set expiration date (30 days)
         $expiresAt = Carbon::now()->addDays(30);
         
-        // تخزين رمز التحديث في قاعدة البيانات
+        // Store the refresh token in the database
         RefreshToken::create([
             'user_id' => $user->id,
             'token' => $token,
@@ -193,7 +198,7 @@ class AuthController extends Controller
     }
 
     /**
-     * الرد برموز JWT والتحديث وتفاصيلها.
+     * Respond with JWT and refresh tokens and their details.
      *
      * @param  string $token
      * @param  string $refreshToken
@@ -207,7 +212,7 @@ class AuthController extends Controller
             'access_token' => $token,
             'refresh_token' => $refreshToken,
             'token_type' => 'bearer',
-            'expires_in' => Auth::guard('api')->factory()->getTTL() * 60 // مدة صلاحية الرمز بالثواني
+            'expires_in' => Auth::guard('api')->factory()->getTTL() * 60 // Token validity in seconds
         ];
 
         if ($message) {

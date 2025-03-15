@@ -66,25 +66,25 @@ class SocialAuthController extends Controller
         }
     }
 
-    public function getUserInfo()
-    {
-        try {
-            $user = Auth::user();
-            return response()->json([
-                'status' => 'success',
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'avatar' => $user->avatar,
-                    'provider' => $user->provider
-                ]
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to get user information'
-            ], 401);
-        }
-    }
+    // public function getUserInfo()
+    // {
+    //     try {
+    //         $user = Auth::user();
+    //         return response()->json([
+    //             'status' => 'success',
+    //             'user' => [
+    //                 'id' => $user->id,
+    //                 'name' => $user->name,
+    //                 'email' => $user->email,
+    //                 'avatar' => $user->avatar,
+    //                 'provider' => $user->provider
+    //             ]
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'status' => 'error',
+    //             'message' => 'Failed to get user information'
+    //         ], 401);
+    //     }
+    // }
 }

@@ -1,7 +1,6 @@
 <?php
 
-use App\Http\Middleware\VerifyAccessToken;
-use App\Http\Middleware\VerifyToken;
+
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
