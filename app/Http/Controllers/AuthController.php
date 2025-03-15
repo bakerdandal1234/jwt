@@ -135,15 +135,27 @@ class AuthController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Find the refresh token in the database
-        $refreshToken = RefreshToken::where('token', $request->refresh_token)
-            ->where('revoked', false)
+        // Find all valid non-revoked tokens for comparison
+        $validTokens = RefreshToken::where('revoked', false)
             ->where('expires_at', '>', now())
-            ->first();
+            ->get();
+        
+        $refreshToken = null;
+        $userId = null;
+        
+        // Check each token to find a match
+        foreach ($validTokens as $token) {
+            // Compare the plain text token with the hashed one in the database
+            if (Hash::check($request->refresh_token, $token->token)) {
+                $refreshToken = $token;
+                $userId = $token->user_id;
+                break;
+            }
+        }
 
         Log::info('Refresh Token Request:', [
-            'token' => $request->refresh_token,
-            'found' => $refreshToken ? 'yes' : 'no',
+            'token_provided' => substr($request->refresh_token, 0, 10) . '...',
+            'token_found' => $refreshToken ? 'yes' : 'no',
             'expires_at' => $refreshToken ? $refreshToken->expires_at : 'N/A',
             'now' => now(),
             'is_revoked' => $refreshToken ? $refreshToken->revoked : 'N/A'
@@ -153,7 +165,7 @@ class AuthController extends Controller
             return response()->json(['error' => 'Invalid or expired refresh token'], 401);
         }
 
-        $user = User::find($refreshToken->user_id);
+        $user = User::find($userId);
         
         if (!$user) {
             return response()->json(['error' => 'User not found'], 404);
@@ -183,18 +195,21 @@ class AuthController extends Controller
         // Create a unique token
         $token = Str::random(64);
         
+        // Hash the token before storing it in the database
+        $hashedToken = Hash::make($token);
+        
         // Set expiration date (30 days)
         $expiresAt = Carbon::now()->addDays(30);
         
-        // Store the refresh token in the database
+        // Store the hashed refresh token in the database
         RefreshToken::create([
             'user_id' => $user->id,
-            'token' => $token,
+            'token' => $hashedToken,  // Store the hashed token
             'expires_at' => $expiresAt,
             'revoked' => false
         ]);
         
-        return $token;
+        return $token;  // Return the plain token to send to the client
     }
 
     /**
