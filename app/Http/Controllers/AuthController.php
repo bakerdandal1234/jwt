@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\RefreshToken;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cookie;
 
 class AuthController extends Controller
 {
@@ -49,9 +50,12 @@ class AuthController extends Controller
 
         // Create JWT for the new user
         $token = Auth::guard('api')->login($user);
-        $refreshToken = $this->createRefreshToken($user);
+        
+        // Create refresh token and get the cookie
+        $refreshTokenCookie = $this->createRefreshTokenAndGetCookie($user);
 
-        return $this->respondWithTokens($token, $refreshToken, 'User registered successfully', $user);
+        return $this->respondWithToken($token, 'User registered successfully', $user)
+            ->withCookie($refreshTokenCookie);
     }
 
     /**
@@ -83,13 +87,14 @@ class AuthController extends Controller
         // Revoke all previous refresh tokens for the user
         RefreshToken::where('user_id', $user->id)->update(['revoked' => true]);
         
-        // Create a new refresh token
-        $refreshToken = $this->createRefreshToken($user);
+        // Create a new refresh token and get the cookie
+        $refreshTokenCookie = $this->createRefreshTokenAndGetCookie($user);
 
         // Generate a new JWT token
         $token = Auth::guard('api')->login($user);
 
-        return $this->respondWithTokens($token, $refreshToken, 'Login successful', $user);
+        return $this->respondWithToken($token, 'Login successful', $user)
+            ->withCookie($refreshTokenCookie);
     }
 
     /**
@@ -117,54 +122,49 @@ class AuthController extends Controller
         }
         Auth::guard('api')->logout();
 
-        return response()->json(['message' => 'Successfully logged out']);
+        // Create a cookie that will clear the refresh token cookie
+        $cookie = Cookie::forget('refresh_token');
+
+        return response()->json(['message' => 'Successfully logged out'])
+            ->withCookie($cookie);
     }
 
     /**
-     * Refresh JWT token using a refresh token.
+     * Refresh JWT token using a refresh token from cookie.
      *
      * @return \Illuminate\Http\JsonResponse
      */
     public function refreshToken(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'refresh_token' => 'required|string',
-            'user_id' => 'required|integer',
-        ]);
-    
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+        // Get refresh token from cookie instead of request body
+        $refreshTokenValue = $request->cookie('refresh_token');
+        
+        if (!$refreshTokenValue) {
+            return response()->json(['error' => 'No refresh token found in cookies'], 401);
         }
-    
-        $validTokens = RefreshToken::where('user_id', $request->user_id)
-            ->where('revoked', false)
+        
+        // Find all valid non-revoked tokens
+        $validTokens = RefreshToken::where('revoked', false)
             ->where('expires_at', '>', now())
             ->get();
         
         $refreshToken = null;
+        $userId = null;
         
-        // التحقق من التوكنات المحددة فقط
+        // Check each token to find a match
         foreach ($validTokens as $token) {
-            if (Hash::check($request->refresh_token, $token->token)) {
+            if (Hash::check($refreshTokenValue, $token->token)) {
                 $refreshToken = $token;
+                $userId = $token->user_id;
                 break;
             }
         }
-    
-        Log::info('Refresh Token Request:', [
-            'token_provided' => substr($request->refresh_token, 0, 10) . '...',
-            'token_found' => $refreshToken ? 'yes' : 'no',
-            'expires_at' => $refreshToken ? $refreshToken->expires_at : 'N/A',
-            'now' => now(),
-            'is_revoked' => $refreshToken ? $refreshToken->revoked : 'N/A'
-        ]);
     
         if (!$refreshToken) {
             return response()->json(['error' => 'Invalid or expired refresh token'], 401);
         }
     
-        // استخدام معرف المستخدم من الطلب مباشرة أو من توكن التحديث
-        $user = User::find($request->user_id);
+        $user = User::find($userId);
         
         if (!$user) {
             return response()->json(['error' => 'User not found'], 404);
@@ -177,18 +177,20 @@ class AuthController extends Controller
         Auth::guard('api')->setUser($user);
         $token = Auth::guard('api')->login($user);
         
-        // Create a new refresh token
-        $newRefreshToken = $this->createRefreshToken($user);
+        // Create a new refresh token and get the cookie
+        $refreshTokenCookie = $this->createRefreshTokenAndGetCookie($user);
     
-        return $this->respondWithTokens($token, $newRefreshToken, 'Token refreshed successfully');
+        return $this->respondWithToken($token, 'Token refreshed successfully')
+            ->withCookie($refreshTokenCookie);
     }
+
     /**
-     * Create a refresh token for the user.
+     * Create a refresh token for the user and return an HTTP cookie.
      *
      * @param  \App\Models\User $user
-     * @return string
+     * @return \Symfony\Component\HttpFoundation\Cookie
      */
-    protected function createRefreshToken(User $user)
+    protected function createRefreshTokenAndGetCookie(User $user)
     {
         // Create a unique token
         $token = Str::random(64);
@@ -207,23 +209,33 @@ class AuthController extends Controller
             'revoked' => false
         ]);
         
-        return $token;  // Return the plain token to send to the client
+        // Create a cookie containing the refresh token
+        // 43200 minutes = 30 days
+        return cookie(
+            'refresh_token',    // name
+            $token,             // value
+            43200,              // minutes (30 days)
+            '/',                // path
+            null,               // domain (null = current domain)
+            config('app.env') === 'production', // secure (HTTPS only in production)
+            true,               // httpOnly (not accessible via JavaScript)
+            false,              // raw
+            'Lax'               // sameSite
+        );
     }
 
     /**
-     * Respond with JWT and refresh tokens and their details.
+     * Respond with JWT token and details.
      *
      * @param  string $token
-     * @param  string $refreshToken
      * @param  string $message
      * @param  mixed  $user
      * @return \Illuminate\Http\JsonResponse
      */
-    protected function respondWithTokens($token, $refreshToken, $message = null, $user = null)
+    protected function respondWithToken($token, $message = null, $user = null)
     {
         $response = [
             'access_token' => $token,
-            'refresh_token' => $refreshToken,
             'token_type' => 'bearer',
             'expires_in' => Auth::guard('api')->factory()->getTTL() * 60 // Token validity in seconds
         ];
