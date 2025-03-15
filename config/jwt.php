@@ -101,7 +101,7 @@ return [
     |
     */
 
-    'ttl' => env('JWT_TTL', 60),
+    'ttl' => env('JWT_TTL', 1), // القيمة بالدقائق، الافتراضي هو 60 دقيقة
 
     /*
     |--------------------------------------------------------------------------
@@ -131,7 +131,7 @@ return [
     |
     */
 
-    'algo' => env('JWT_ALGO', Tymon\JWTAuth\Providers\JWT\Provider::ALGO_HS256),
+    'algo' => 'HS256',  // أو استخدم 'RS256' إذا كنت بحاجة إلى تشفير مفتاح عام/خاص
 
     /*
     |--------------------------------------------------------------------------
@@ -218,7 +218,7 @@ return [
     */
 
     'blacklist_enabled' => env('JWT_BLACKLIST_ENABLED', true),
-
+    'blacklist_grace_period' => env('JWT_BLACKLIST_GRACE_PERIOD', 0),
     /*
     | -------------------------------------------------------------------------
     | Blacklist Grace Period
