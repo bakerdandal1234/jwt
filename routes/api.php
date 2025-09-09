@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController; // Ensure this class exists in the spec
 use App\Http\Controllers\ResetPasswordController;
 use App\Http\Controllers\VerifyEmailController;
 use App\Http\Controllers\SocialAuthController;
+use App\Http\Controllers\TaskController;
 // Ensure the SocialAuthController class exists in the specified namespace
 // If it does not exist, create the class in the specified namespace
 
@@ -37,3 +38,7 @@ Route::group([
 });
 
 Route::post('refresh', [AuthController::class, 'refreshToken'])->middleware('throttle:5,1');
+
+Route::middleware('auth:api')->group(function () {
+    Route::apiResource('tasks', TaskController::class);
+});

@@ -98,10 +98,17 @@ class AuthController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
+    // public function me()
+    // {
+    //     return response()->json(Auth::guard('api')->user());
+    // }
+
     public function me()
-    {
-        return response()->json(Auth::guard('api')->user());
-    }
+{
+    return response()->json(
+        Auth::user()->load('tasks') // أو: load('roles', 'permissions', 'tasks')
+    );
+}
 
     /**
      * Logout (invalidate current tokens).
