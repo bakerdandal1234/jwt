@@ -11,16 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('refresh_tokens', function (Blueprint $table) {
+        $table = Schema::create('refresh_tokens', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('token', 100)->unique();
             $table->timestamp('expires_at');
-            $table->timestamp('last_used_at')->nullable();
-            $table->boolean('revoked')->default(false);
             $table->timestamps();
-            $table->index('token');
         });
+       
     }
 
     /**

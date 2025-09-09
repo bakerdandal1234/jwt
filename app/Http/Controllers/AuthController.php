@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
+
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
@@ -8,9 +9,9 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use App\Models\User;
-use App\Models\RefreshToken;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use App\Models\RefreshToken;
 use Illuminate\Support\Facades\Cookie;
 
 class AuthController extends Controller
@@ -32,25 +33,23 @@ class AuthController extends Controller
      */
     public function register(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|min:3',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
+        $request->validate([
+            'name' => 'required|string|min:3',
+            'email' => 'required|string|email|unique:users,email',
+            'password' => 'required|min:8|confirmed',
+            'password_confirmation' => 'required'
         ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
 
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
         ]);
+        $user->sendEmailVerificationNotification();
 
         // Create JWT for the new user
         $token = Auth::guard('api')->login($user);
-        
+
         // Create refresh token and get the cookie
         $refreshTokenCookie = $this->createRefreshTokenAndGetCookie($user);
 
@@ -65,32 +64,29 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'email' => 'required|email',
-            'password' => 'required|string',
-        ]);
+        $credentials = $request->only('email', 'password');
 
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+        // Check if the user exists and email is verified
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json(['error' => 'Email or password is incorrect'], 401);
         }
 
-        $credentials = $request->only('email', 'password');
+        // if (is_null($user->email_verified_at)) {
+        //     return response()->json(['error' => 'Please verify your email before logging in.'], 403);
+        // }
 
         // Attempt to authenticate the user
         if (!Auth::guard('api')->attempt($credentials)) {
-            return response()->json(['error' => 'Incorrect email or password'], 401);
+            return response()->json(['error' => 'Email or password is incorrect'], 401);
         }
 
-        // Get the authenticated user
+        // Successful login
         $user = Auth::guard('api')->user();
-        
-        // Revoke all previous refresh tokens for the user
-        RefreshToken::where('user_id', $user->id)->update(['revoked' => true]);
-        
+
         // Create a new refresh token and get the cookie
         $refreshTokenCookie = $this->createRefreshTokenAndGetCookie($user);
-
-        // Generate a new JWT token
         $token = Auth::guard('api')->login($user);
 
         return $this->respondWithToken($token, 'Login successful', $user)
@@ -113,21 +109,33 @@ class AuthController extends Controller
      * @return \Illuminate\Http\JsonResponse
      */
     public function logout()
-    {
-        $user = Auth::guard('api')->user();
+{
+    $user = Auth::guard('api')->user();
+
+    if ($user) {
+        // الحصول على الرمز من الكوكي
+        $refreshTokenValue = request()->cookie('refresh_token');
         
-        // Revoke all refresh tokens for the user
-        if ($user) {
-            RefreshToken::where('user_id', $user->id)->update(['revoked' => true]);
+        if ($refreshTokenValue) {
+            // حذف الرمز من قاعدة البيانات
+            $hashedToken = hash('sha256', $refreshTokenValue);
+            RefreshToken::where('user_id', $user->id)
+                ->where('token', $hashedToken)
+                ->delete();
+                
+            Log::info('تم حذف رمز التحديث عند تسجيل الخروج للمستخدم: ' . $user->id);
         }
-        Auth::guard('api')->logout();
-
-        // Create a cookie that will clear the refresh token cookie
-        $cookie = Cookie::forget('refresh_token');
-
-        return response()->json(['message' => 'Successfully logged out'])
-            ->withCookie($cookie);
     }
+
+    // حذف الكوكي
+    $cookie = Cookie::forget('refresh_token');
+
+    // تسجيل الخروج من النظام
+    Auth::guard('api')->logout();
+
+    return response()->json(['message' => 'تم تسجيل الخروج بنجاح'])
+        ->withCookie($cookie);
+}
 
     /**
      * Refresh JWT token using a refresh token from cookie.
@@ -136,52 +144,51 @@ class AuthController extends Controller
      */
     public function refreshToken(Request $request)
     {
-        // Get refresh token from cookie instead of request body
+        Log::info('🍪 [Refresh Attempt] محاولة تحديث الرمز.');
+    
+        // الحصول على رمز التحديث من الكوكي
         $refreshTokenValue = $request->cookie('refresh_token');
-        
+        Log::info('🍪 [Refresh Token] الكوكي: ' . ($refreshTokenValue ? 'موجود' : 'غير موجود'));
+    
         if (!$refreshTokenValue) {
-            return response()->json(['error' => 'No refresh token found in cookies'], 401);
+            Log::error('🍪 [Refresh Token Error] لم يتم العثور على رمز التحديث في الكوكيز.');
+            return response()->json(['error' => 'لم يتم العثور على رمز التحديث في الكوكيز'], 401);
         }
-        
-        // Find all valid non-revoked tokens
-        $validTokens = RefreshToken::where('revoked', false)
-            ->where('expires_at', '>', now())
-            ->get();
-        
-        $refreshToken = null;
-        $userId = null;
-        
-        // Check each token to find a match
-        foreach ($validTokens as $token) {
-            if (Hash::check($refreshTokenValue, $token->token)) {
-                $refreshToken = $token;
-                $userId = $token->user_id;
-                break;
+    
+        try {
+            // تشفير الرمز للبحث عنه في قاعدة البيانات
+            $hashedToken = hash('sha256', $refreshTokenValue);
+            
+            // البحث عن رمز التحديث في قاعدة البيانات
+            $refreshToken = RefreshToken::where('token', $hashedToken)
+                ->where('expires_at', '>', Carbon::now())
+                ->first();
+            
+            if (!$refreshToken) {
+                Log::error('🍪 [Refresh Token Error] رمز التحديث غير صالح أو منتهي الصلاحية.');
+                return response()->json(['error' => 'رمز التحديث غير صالح أو منتهي الصلاحية'], 401);
             }
+            
+            // البحث عن المستخدم المرتبط بالرمز
+            $user = User::find($refreshToken->user_id);
+            
+            if (!$user) {
+                Log::error('🍪 [Refresh Token Error] لم يتم العثور على المستخدم (معرف: ' . $refreshToken->user_id . ')');
+                return response()->json(['error' => 'المستخدم غير موجود'], 401);
+            }
+            
+            // إنشاء رمز JWT جديد
+            $token = Auth::guard('api')->login($user);
+            
+            Log::info('🍪 [Refresh Token] تم تحديث رمز الوصول بنجاح للمستخدم: ' . $user->id);
+            
+            // إرجاع الرمز الجديد مع الاحتفاظ برمز التحديث الحالي
+            return $this->respondWithToken($token, 'تم تحديث رمز الوصول بنجاح');
+            
+        } catch (\Exception $e) {
+            Log::error('🍪 [Refresh Token Error] ' . $e->getMessage());
+            return response()->json(['error' => 'فشل في تحديث الرمز: ' . $e->getMessage()], 401);
         }
-    
-        if (!$refreshToken) {
-            return response()->json(['error' => 'Invalid or expired refresh token'], 401);
-        }
-    
-        $user = User::find($userId);
-        
-        if (!$user) {
-            return response()->json(['error' => 'User not found'], 404);
-        }
-    
-        // Revoke the current refresh token
-        $refreshToken->update(['revoked' => true]);
-        
-        // Create a new JWT token for the user
-        Auth::guard('api')->setUser($user);
-        $token = Auth::guard('api')->login($user);
-        
-        // Create a new refresh token and get the cookie
-        $refreshTokenCookie = $this->createRefreshTokenAndGetCookie($user);
-    
-        return $this->respondWithToken($token, 'Token refreshed successfully')
-            ->withCookie($refreshTokenCookie);
     }
 
     /**
@@ -192,35 +199,36 @@ class AuthController extends Controller
      */
     protected function createRefreshTokenAndGetCookie(User $user)
     {
-        // Create a unique token
+        // إنشاء رمز تحديث عشوائي
         $token = Str::random(64);
         
-        // Hash the token before storing it in the database
-        $hashedToken = Hash::make($token);
+        // تخزين نسخة مشفرة من الرمز في قاعدة البيانات
+        $hashedToken = hash('sha256', $token);
         
-        // Set expiration date (30 days)
+        // تعيين تاريخ انتهاء الصلاحية (30 يوم)
         $expiresAt = Carbon::now()->addDays(30);
         
-        // Store the hashed refresh token in the database
+        // إنشاء أو تحديث رمز التحديث في قاعدة البيانات
         RefreshToken::create([
             'user_id' => $user->id,
-            'token' => $hashedToken,  // Store the hashed token
-            'expires_at' => $expiresAt,
-            'revoked' => false
+            'token' => $hashedToken,
+            'expires_at' => $expiresAt
         ]);
         
-        // Create a cookie containing the refresh token
-        // 43200 minutes = 30 days
+        // تسجيل العملية
+        Log::info('تم إنشاء رمز تحديث جديد للمستخدم: ' . $user->id);
+        $secure = app()->environment('production');
+        // إنشاء كوكي يحتوي على الرمز
         return cookie(
-            'refresh_token',    // name
-            $token,             // value
-            43200,              // minutes (30 days)
-            '/',                // path
-            null,               // domain (null = current domain)
-            config('app.env') === 'production', // secure (HTTPS only in production)
-            true,               // httpOnly (not accessible via JavaScript)
-            false,              // raw
-            'Lax'               // sameSite
+            'refresh_token',    // الاسم
+            $token,             // القيمة (النسخة غير المشفرة)
+            43200,              // المدة بالدقائق (30 يوم)
+            '/',                // المسار
+            null,               // المجال (null = المجال الحالي)
+            $secure,              // آمن (في الإنتاج يجب تغييره إلى true)
+            true,               // httpOnly (غير قابل للوصول عبر جافا سكريبت)
+            false,              // خام
+            'lax'               // sameSite
         );
     }
 
@@ -237,7 +245,7 @@ class AuthController extends Controller
         $response = [
             'access_token' => $token,
             'token_type' => 'bearer',
-            'expires_in' => Auth::guard('api')->factory()->getTTL() * 60 // Token validity in seconds
+            'expires_in' => Auth::guard('api')->factory()->getTTL() * 60, // Token validity in seconds
         ];
 
         if ($message) {

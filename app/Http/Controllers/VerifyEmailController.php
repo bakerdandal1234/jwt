@@ -9,23 +9,28 @@ use Illuminate\Support\Facades\Validator;
 class VerifyEmailController extends Controller
 {
    
-    public function verify( $id, $hash)
+   
+    public function verify( Request $request, $id, $hash)
     {
         $user = User::findOrFail($id);
-
-        if (! hash_equals((string) $hash, sha1($user->getEmailForVerification()))) {
-            return response()->json(['message' => 'Invalid verification link'], 400);
+        if (! $request->hasValidSignature()) {
+            return redirect(config('app.frontend_url') . '/email-verification-result?status=error');
         }
-
+        // if (! hash_equals((string) $hash, sha1($user->getEmailForVerification()))) {
+        //     return redirect(config('app.frontend_url') . '/email-verification-result?status=error');
+        // }
+    
         if ($user->hasVerifiedEmail()) {
-            return response()->json(['message' => 'Email already verified'], 400);
+            return redirect(config('app.frontend_url') . '/email-verification-result?status=warning');
         }
-
+    
         $user->markEmailAsVerified();
         event(new Verified($user));
-        // return response()->json(['message' => 'Email verified successfully', 'user' => $user], 200);
-       return response()->json(['message' => 'Email verified successfully','status' => 'success'], 200);
+    
+        return redirect(config('app.frontend_url') . '/email-verification-result?status=success');
     }
+    
+
 
     public function resend(Request $request)
 {

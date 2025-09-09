@@ -21,12 +21,12 @@ Route::get('/email/verify/{id}/{hash}', [VerifyEmailController::class, 'verify']
 Route::post('/resend', [VerifyEmailController::class, 'resend'])->name('verification.resend')->middleware('throttle:5,1');
 
 
-    Route::post('register', [AuthController::class, 'register']);
-    Route::post('login', [AuthController::class, 'login']);
+    Route::post('register', [AuthController::class, 'register'])->middleware('throttle:5,1');
+    Route::post('login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 
 
-Route::post('/forget-password', [ResetPasswordController::class, 'sendResetLink']);
-Route::post('/reset-password', [ResetPasswordController::class, 'resetPassword']);
+Route::post('/forget-password', [ResetPasswordController::class, 'sendResetLink'])->middleware('throttle:5,1');
+Route::post('/reset-password', [ResetPasswordController::class, 'resetPassword'])->middleware('throttle:5,1');
 
 
 Route::group([
@@ -36,4 +36,4 @@ Route::group([
     Route::post('logout', [AuthController::class, 'logout']);
 });
 
-Route::post('refresh', [AuthController::class, 'refreshToken']);
+Route::post('refresh', [AuthController::class, 'refreshToken'])->middleware('throttle:5,1');
