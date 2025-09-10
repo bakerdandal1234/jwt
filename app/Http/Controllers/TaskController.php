@@ -19,6 +19,10 @@ class TaskController extends Controller
     // إنشاء مهمة جديدة
     public function store(Request $request)
     {
+        $user = Auth::user();
+        if(!$user->can('create task')){
+            return response()->json(['error' => 'You do not have permission to create tasks'], 403);
+        }   
         $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',

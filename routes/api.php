@@ -39,6 +39,13 @@ Route::group([
 
 Route::post('refresh', [AuthController::class, 'refreshToken'])->middleware('throttle:5,1');
 
-Route::middleware('auth:api')->group(function () {
-    Route::apiResource('tasks', TaskController::class);
+// Route::middleware(['auth:api','permission:create task'])->group(function () {
+//     Route::apiResource('tasks', TaskController::class);
+// });
+
+Route::middleware(['auth:api'])->group(function () {
+    Route::get('tasks', [TaskController::class, 'index'])->middleware('permission:view task');
+    Route::post('tasks', [TaskController::class, 'store'])->middleware('permission:create task');
+    Route::put('tasks/{task}', [TaskController::class, 'update'])->middleware('permission:edit task');
+    Route::delete('tasks/{task}', [TaskController::class, 'destroy'])->middleware('permission:delete task');
 });

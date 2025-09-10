@@ -46,9 +46,9 @@ class AuthController extends Controller
             'password' => Hash::make($request->password),
         ]);
         $user->sendEmailVerificationNotification();
-
+        $user->assignRole('user'); // الدور الافتراضي للمستخدم الجديد
         // Create JWT for the new user
-        $token = Auth::guard('api')->login($user);
+        $token = Auth::guard('api')->attempt($request->only('email', 'password'));
 
         // Create refresh token and get the cookie
         $refreshTokenCookie = $this->createRefreshTokenAndGetCookie($user);
@@ -105,9 +105,8 @@ class AuthController extends Controller
 
     public function me()
 {
-    return response()->json(
-        Auth::user()->load('tasks') // أو: load('roles', 'permissions', 'tasks')
-    );
+    $user = Auth::user()->load('roles', 'permissions', 'tasks');
+return response()->json($user);
 }
 
     /**
@@ -260,7 +259,7 @@ class AuthController extends Controller
         }
 
         if ($user) {
-            $response['user'] = $user;
+            $response['user'] = $user->load('roles', 'permissions');
         }
 
         return response()->json($response);
