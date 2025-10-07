@@ -16,9 +16,8 @@ class PermissionMiddleware
     public function handle(Request $request, Closure $next, $permission)
 {
     $user = Auth::guard('api')->user();
-
     if (!$user || !$user->hasPermissionTo($permission)) {
-        return response()->json(['error' => 'Forbidden: insufficient permission'], 403);
+        return response()->json(['error' => 'Forbidden: insufficient permission','required_permission' => $permission], 403);
     }
 
     return $next($request);

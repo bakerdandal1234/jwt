@@ -7,6 +7,9 @@ use App\Http\Controllers\ResetPasswordController;
 use App\Http\Controllers\VerifyEmailController;
 use App\Http\Controllers\SocialAuthController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\PostController;
+use App\Http\Controllers\CommentController;
+use App\Http\Controllers\CategoryController;
 // Ensure the SocialAuthController class exists in the specified namespace
 // If it does not exist, create the class in the specified namespace
 
@@ -43,9 +46,31 @@ Route::post('refresh', [AuthController::class, 'refreshToken'])->middleware('thr
 //     Route::apiResource('tasks', TaskController::class);
 // });
 
+// Route::middleware(['auth:api'])->group(function () {
+//     Route::get('tasks', [TaskController::class, 'index'])->middleware('permission:view task');
+//     Route::post('tasks', [TaskController::class, 'store'])->middleware('permission:create task');
+//     Route::put('tasks/{task}', [TaskController::class, 'update'])->middleware('permission:edit task');
+//     Route::delete('tasks/{task}', [TaskController::class, 'destroy'])->middleware('permission:delete task');
+// });
+
 Route::middleware(['auth:api'])->group(function () {
-    Route::get('tasks', [TaskController::class, 'index'])->middleware('permission:view task');
-    Route::post('tasks', [TaskController::class, 'store'])->middleware('permission:create task');
-    Route::put('tasks/{task}', [TaskController::class, 'update'])->middleware('permission:edit task');
-    Route::delete('tasks/{task}', [TaskController::class, 'destroy'])->middleware('permission:delete task');
+    Route::get('posts', [PostController::class, 'index'])->middleware('permission:view task');
+    Route::post('posts', [PostController::class, 'store'])->middleware('permission:create task');
+    Route::put('posts/{post}', [PostController::class, 'update'])->middleware('permission:edit task');
+    Route::delete('posts/{post}', [PostController::class, 'destroy'])->middleware('permission:delete task');
+});
+
+Route::middleware(['auth:api'])->group(function () {
+    Route::get('comments', [CommentController::class, 'index'])->middleware('permission:view task');
+    Route::post('comments', [CommentController::class, 'store'])->middleware('permission:create task');
+    Route::put('comments/{comment}', [CommentController::class, 'update'])->middleware('permission:edit task');
+    Route::delete('comments/{comment}', [CommentController::class, 'destroy'])->middleware('permission:delete task');
+});
+
+
+Route::middleware(['auth:api'])->group(function () {
+    Route::get('categories', [CategoryController::class, 'index'])->middleware('permission:view category');
+    Route::post('categories', [CategoryController::class, 'store'])->middleware('permission:create task');
+    Route::put('categories/{category}', [CategoryController::class, 'update'])->middleware('permission:edit category');
+    Route::delete('categories/{category}', [CategoryController::class, 'destroy'])->middleware('permission:delete category');
 });

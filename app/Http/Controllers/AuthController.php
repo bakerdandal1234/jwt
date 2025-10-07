@@ -104,10 +104,10 @@ class AuthController extends Controller
     // }
 
     public function me()
-{
-    $user = Auth::user()->load('roles', 'permissions', 'tasks');
-return response()->json($user);
-}
+    {
+        $user = Auth::user()->load('roles', 'permissions', 'posts', 'comments',);
+        return response()->json($user);
+    }
 
     /**
      * Logout (invalidate current tokens).
@@ -115,33 +115,33 @@ return response()->json($user);
      * @return \Illuminate\Http\JsonResponse
      */
     public function logout()
-{
-    $user = Auth::guard('api')->user();
+    {
+        $user = Auth::guard('api')->user();
 
-    if ($user) {
-        // الحصول على الرمز من الكوكي
-        $refreshTokenValue = request()->cookie('refresh_token');
-        
-        if ($refreshTokenValue) {
-            // حذف الرمز من قاعدة البيانات
-            $hashedToken = hash('sha256', $refreshTokenValue);
-            RefreshToken::where('user_id', $user->id)
-                ->where('token', $hashedToken)
-                ->delete();
-                
-            Log::info('تم حذف رمز التحديث عند تسجيل الخروج للمستخدم: ' . $user->id);
+        if ($user) {
+            // الحصول على الرمز من الكوكي
+            $refreshTokenValue = request()->cookie('refresh_token');
+
+            if ($refreshTokenValue) {
+                // حذف الرمز من قاعدة البيانات
+                $hashedToken = hash('sha256', $refreshTokenValue);
+                RefreshToken::where('user_id', $user->id)
+                    ->where('token', $hashedToken)
+                    ->delete();
+
+                Log::info('تم حذف رمز التحديث عند تسجيل الخروج للمستخدم: ' . $user->id);
+            }
         }
+
+        // حذف الكوكي
+        $cookie = Cookie::forget('refresh_token');
+
+        // تسجيل الخروج من النظام
+        Auth::guard('api')->logout();
+
+        return response()->json(['message' => 'تم تسجيل الخروج بنجاح'])
+            ->withCookie($cookie);
     }
-
-    // حذف الكوكي
-    $cookie = Cookie::forget('refresh_token');
-
-    // تسجيل الخروج من النظام
-    Auth::guard('api')->logout();
-
-    return response()->json(['message' => 'تم تسجيل الخروج بنجاح'])
-        ->withCookie($cookie);
-}
 
     /**
      * Refresh JWT token using a refresh token from cookie.
@@ -151,46 +151,45 @@ return response()->json($user);
     public function refreshToken(Request $request)
     {
         Log::info('🍪 [Refresh Attempt] محاولة تحديث الرمز.');
-    
+
         // الحصول على رمز التحديث من الكوكي
         $refreshTokenValue = $request->cookie('refresh_token');
         Log::info('🍪 [Refresh Token] الكوكي: ' . ($refreshTokenValue ? 'موجود' : 'غير موجود'));
-    
+
         if (!$refreshTokenValue) {
             Log::error('🍪 [Refresh Token Error] لم يتم العثور على رمز التحديث في الكوكيز.');
             return response()->json(['error' => 'لم يتم العثور على رمز التحديث في الكوكيز'], 401);
         }
-    
+
         try {
             // تشفير الرمز للبحث عنه في قاعدة البيانات
             $hashedToken = hash('sha256', $refreshTokenValue);
-            
+
             // البحث عن رمز التحديث في قاعدة البيانات
             $refreshToken = RefreshToken::where('token', $hashedToken)
                 ->where('expires_at', '>', Carbon::now())
                 ->first();
-            
+
             if (!$refreshToken) {
                 Log::error('🍪 [Refresh Token Error] رمز التحديث غير صالح أو منتهي الصلاحية.');
                 return response()->json(['error' => 'رمز التحديث غير صالح أو منتهي الصلاحية'], 401);
             }
-            
+
             // البحث عن المستخدم المرتبط بالرمز
             $user = User::find($refreshToken->user_id);
-            
+
             if (!$user) {
                 Log::error('🍪 [Refresh Token Error] لم يتم العثور على المستخدم (معرف: ' . $refreshToken->user_id . ')');
                 return response()->json(['error' => 'المستخدم غير موجود'], 401);
             }
-            
+
             // إنشاء رمز JWT جديد
             $token = Auth::guard('api')->login($user);
-            
+
             Log::info('🍪 [Refresh Token] تم تحديث رمز الوصول بنجاح للمستخدم: ' . $user->id);
-            
+
             // إرجاع الرمز الجديد مع الاحتفاظ برمز التحديث الحالي
             return $this->respondWithToken($token, 'تم تحديث رمز الوصول بنجاح');
-            
         } catch (\Exception $e) {
             Log::error('🍪 [Refresh Token Error] ' . $e->getMessage());
             return response()->json(['error' => 'فشل في تحديث الرمز: ' . $e->getMessage()], 401);
@@ -207,20 +206,20 @@ return response()->json($user);
     {
         // إنشاء رمز تحديث عشوائي
         $token = Str::random(64);
-        
+
         // تخزين نسخة مشفرة من الرمز في قاعدة البيانات
         $hashedToken = hash('sha256', $token);
-        
+
         // تعيين تاريخ انتهاء الصلاحية (30 يوم)
         $expiresAt = Carbon::now()->addDays(30);
-        
+
         // إنشاء أو تحديث رمز التحديث في قاعدة البيانات
         RefreshToken::create([
             'user_id' => $user->id,
             'token' => $hashedToken,
             'expires_at' => $expiresAt
         ]);
-        
+
         // تسجيل العملية
         Log::info('تم إنشاء رمز تحديث جديد للمستخدم: ' . $user->id);
         $secure = app()->environment('production');

@@ -65,9 +65,14 @@ class User extends Authenticatable  implements JWTSubject
         $this->notify(new CustomResetPassword($token));
     }
 
-    public function tasks()
+    
+    public function posts()
     {
-        return $this->hasMany(Task::class);
+        return $this->hasMany(Post::class);
+    }
+    public function comments()
+    {
+        return $this->hasMany(Comment::class);
     }
 
     // app/Models/User.php

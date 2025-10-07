@@ -17,13 +17,13 @@ class RoleAndPermissionSeeder extends Seeder
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
         // إنشاء صلاحيات
-        Permission::firstOrCreate(['name' => 'create task']);
-        Permission::firstOrCreate(['name' => 'edit task']);
-        Permission::firstOrCreate(['name' => 'delete task']);
+        permission::firstOrCreate(['name' => 'create task']);
+        permission::firstOrCreate(['name' => 'edit task']);
+        permission::firstOrCreate(['name' => 'delete task']);
         permission::firstOrCreate(['name' => 'view task']);
         // إنشاء أدوار وربط الصلاحيات
         $roleUser = Role::updateOrCreate(['name' => 'user']);
-        $roleUser->syncPermissions('view task');
+        $roleUser->syncPermissions('view task', 'create task');
 
         $roleAdmin = Role::updateOrCreate(['name' => 'admin']);
         $roleAdmin->syncPermissions(Permission::all());
